@@ -1,20 +1,20 @@
 ﻿using Dapper;
 using Project_Spacey;
+using Project_Spacey.Programmer.Core;
+
+Database.Initialize();
 
 using var conn = Database.Open();
 
-// Insert one Series
-var seriesId = conn.ExecuteScalar<long>(
-    "INSERT INTO Series (Title, Type) VALUES (@Title, @Type); SELECT last_insert_rowid();",
-    new { Title = "My Custom Channel", Type = "Custom" }
-);
+var scanner = new MediaScanner();
 
-Console.WriteLine($"Inserted SeriesId = {seriesId}");
+var seriesId = await scanner.EnsureSeriesAsync(conn, title: "One Piece", type: "Anime");
 
-// Read it back
-var series = conn.QuerySingle<(long SeriesId, string Title, string Type)>(
-    "SELECT SeriesId, Title, Type FROM Series WHERE SeriesId = @id",
-    new { id = seriesId }
-);
+var folder = @"C:\Users\Mega-PC\Downloads\One Piece 1";
 
-Console.WriteLine($"Read back: {series.Title} ({series.Type})");
+await scanner.ScanSeriesFolderAsync(conn, seriesId, folder);
+
+Console.WriteLine("Scan complete");
+
+var count = await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM MediaItem;");
+Console.WriteLine($"Total MediaItem rows: {count}");
