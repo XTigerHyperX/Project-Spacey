@@ -21,7 +21,6 @@
         public ShcedulePlan AddMixBlock (string name , string startHH , string endHH, int MaxConsSameSeries,int avoidSameSeriesWithinMinutes,params(long seriesID , int weight)[]pool)
         {
             var block = new BlockSpecf(name , TimeOnly.ParseExact(startHH , "HH:mm") , TimeOnly.ParseExact(endHH , "HH:mm") , MaxConsecutiveSameSeries : MaxConsSameSeries , AvoidSameSeriesWithinMinutes: avoidSameSeriesWithinMinutes);
-
             foreach (var (sid,w) in pool)
             {
                 block.PoolWeight[sid] = Math.Max(1, w);
