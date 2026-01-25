@@ -18,6 +18,7 @@ namespace Project_Spacey
             using var conn = Open();
             using var cmd = conn.CreateCommand();
 
+            // 1) Base tables (SAFE)
             cmd.CommandText = @"
 CREATE TABLE IF NOT EXISTS Series (
   SeriesId INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -59,8 +60,40 @@ CREATE TABLE IF NOT EXISTS ScheduleItem (
   Reason TEXT,
   FOREIGN KEY (MediaId) REFERENCES MediaItem(MediaId)
 );
+
+CREATE TABLE IF NOT EXISTS SeriesProgress (
+  SeriesId INTEGER NOT NULL,
+  ChannelId INTEGER NOT NULL,
+  NextIndex INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (SeriesId, ChannelId)
+);
+";
+            cmd.ExecuteNonQuery();
+
+            // 2) Add FileSizeBytes column SAFELY
+            try
+            {
+                cmd.CommandText = "ALTER TABLE MediaItem ADD COLUMN FileSizeBytes INTEGER;";
+                cmd.ExecuteNonQuery();
+            }
+            catch (SqliteException ex)
+                when (ex.Message.Contains("duplicate column name"))
+            {
+                // Column already exists → ignore
+            }
+
+            // 3) Indexes (SAFE)
+            cmd.CommandText = @"
+CREATE UNIQUE INDEX IF NOT EXISTS UX_Series_Title_NoCase
+ON Series(Title COLLATE NOCASE);
+
+CREATE UNIQUE INDEX IF NOT EXISTS IX_MediaItem_FilePath
+ON MediaItem(FilePath);
+
+CREATE INDEX IF NOT EXISTS IX_MediaItem_Series_Size_Dur
+ON MediaItem(SeriesId, FileSizeBytes, DurationSeconds);
 ";
             cmd.ExecuteNonQuery();
         }
     }
-}
+    }

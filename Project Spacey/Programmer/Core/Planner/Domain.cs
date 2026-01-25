@@ -19,11 +19,26 @@ namespace Project_Spacey.Programmer.Core.Planner
             );
 
     public sealed record MediaItem(
-        long MediaId,
-        long SeriesId,
-        string Title,
-        int DurationSeconds,
-        string FilePath,
-        bool IsActive
-        );
+    long MediaId,
+    long SeriesId,
+    int? SeasonNumber,
+    int? EpisodeNumber,
+    string Title,
+    int DurationSeconds,
+    string FilePath,
+    bool IsActive
+);
+
+    public sealed class MediaItemRow
+    {
+        public long MediaId { get; set; }
+        public long SeriesId { get; set; }
+        public long? SeasonNumber { get; set; }
+        public long? EpisodeNumber { get; set; }
+        public string Title { get; set; } = "";
+        public long DurationSeconds { get; set; }
+        public string FilePath { get; set; } = "";
+        public long IsActive { get; set; }
+    }
+
 }
