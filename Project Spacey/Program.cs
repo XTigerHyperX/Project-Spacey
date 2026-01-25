@@ -4,6 +4,7 @@ using Project_Spacey.Programmer.Core.Data;
 using Project_Spacey.Programmer.Core.Planner;        
 using Project_Spacey.Programmer.Core.Planner.Atlas;
 using Project_Spacey.Programmer.Core.Planner.Project_Spacey.Programmer.Core.Planner;
+using Project_Spacey.Programmer.Core.Playback;
 using Project_Spacey.Programmer.Core.Project_Spacey.Programmer.Core.LibraryImport;
 
 internal class Program
@@ -20,8 +21,12 @@ internal class Program
         ConsoleUi.KeyValue("DB Path", Path.GetFullPath(Database.DbFile));
 
         var ffprobePath = @"C:\Users\Mega-PC\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffprobe.exe";
+        var ffmpegPath = @"C:\Users\Mega-PC\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffmpeg.exe"; // adjust if not on PATH
         var rootPath = @"C:\Users\Mega-PC\Downloads\Anime";
         int channelId = 1;
+        var outputUrl = "udp://127.0.0.1:1234"; // FFmpeg output target
+        var playerUrl = "udp://@:1234";        // VLC listen URL
+        var ffplayPath = @"C:\Users\Mega-PC\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffplay.exe";
 
         var dayStart = new TimeOnly(8, 0);
         var dayEnd = new TimeOnly(1, 0);
@@ -158,5 +163,29 @@ internal class Program
                 ConsoleColor.DarkGray,
                 ConsoleColor.Gray);
         }
+
+        // 10) Stream schedule in real-time via FFmpeg
+        ConsoleUi.Section("Streaming");
+        ConsoleUi.KeyValue("Output", outputUrl);
+        ConsoleUi.Info("Streaming items in schedule order...");
+
+        var playback = new PlaybackService();
+
+        // Auto-launch ffplay to monitor the stream
+        if (File.Exists(ffplayPath))
+        {
+            ConsoleUi.Info($"Launching ffplay: {ffplayPath}");
+            playback.StartDebugPlayer(ffplayPath, "udp://127.0.0.1:1234", msg => ConsoleUi.Info(msg));
+        }
+        else
+        {
+            ConsoleUi.Warn($"ffplay not found at {ffplayPath}");
+        }
+        await playback.StreamScheduleAsync(
+            result.Items,
+            mediaById,
+            ffmpegPath,
+            outputUrl,
+            msg => ConsoleUi.Info(msg));
     }
 }
