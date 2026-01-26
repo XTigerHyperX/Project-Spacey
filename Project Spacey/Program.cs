@@ -28,8 +28,8 @@ internal class Program
         var playerUrl = "udp://@:1234";        // VLC listen URL
         var ffplayPath = @"C:\Users\Mega-PC\AppData\Local\Microsoft\WinGet\Packages\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\ffmpeg-8.0.1-full_build\bin\ffplay.exe";
 
-        var dayStart = new TimeOnly(8, 0);
-        var dayEnd = new TimeOnly(1, 0);
+        var dayStart = new TimeOnly(0, 0);
+        var dayEnd = new TimeOnly(0, 0);
 
 
         ConsoleUi.Section("Library Scan & Import");
@@ -121,7 +121,22 @@ internal class Program
         var compiler = new ScheduleCompiler();
         var day = DateOnly.FromDateTime(DateTime.Now);
 
-        var result = compiler.Compile(day, plan, catalog, progress);
+        // Prefer reusing an existing schedule file for the day
+        var schedulePath = ScheduleFileStore.GetDefaultPath(channelId, day);
+        ScheduleCompiler.Result result;
+
+        if (ScheduleFileStore.TryLoad(schedulePath, out var loaded))
+        {
+            ConsoleUi.Success($"Loaded schedule from file: {schedulePath}");
+            result = new ScheduleCompiler.Result(loaded.windowStart, loaded.windowEnd, loaded.items);
+        }
+        else
+        {
+            ConsoleUi.Info("No saved schedule found. Compiling a new schedule...");
+            result = compiler.Compile(day, plan, catalog, progress);
+            ScheduleFileStore.Save(schedulePath, result.WindowStart, result.WindowEnd, result.Items);
+            ConsoleUi.Success($"Saved schedule to file: {schedulePath}");
+        }
 
         await scheduleRepo.SaveDayAsync(conn, channelId, day, result.Items);
         await progressRepo.SaveAsync(conn, progress.Dump());

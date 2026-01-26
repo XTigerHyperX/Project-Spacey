@@ -12,17 +12,27 @@ namespace Project_Spacey.Programmer.Core.Playback
 {
     internal sealed class PlaybackService
     {
+        // Default if caller doesn't provide one
         public const string DefaultOutputUrl = "udp://127.0.0.1:1234?pkt_size=1316&overrun_nonfatal=1&fifo_size=5000000";
 
+        /// <summary>
+        /// Remux (no re-encode). Usually the smoothest if the MP4 already contains H264/AAC.
+        /// </summary>
         public static string BuildFfmpegArgs_Remux(string inputPath, string outputUrl)
         {
+            // For MP4 -> MPEG-TS, we often need H264 bitstream filter.
+            // If the input isn't H264, ffmpeg will fail; we catch and fallback to transcode.
             return new StringBuilder()
                 .Append("-hide_banner -loglevel warning ")
                 .Append("-re ")
                 .Append($"-i \"{inputPath}\" ")
+                // map first video, first audio if present; ignore missing audio
                 .Append("-map 0:v:0 -map 0:a:0? ")
+                // copy streams
                 .Append("-c copy ")
+                // MP4 (AVCC) -> TS (AnnexB) for H264
                 .Append("-bsf:v h264_mp4toannexb ")
+                // low-latency TS muxing
                 .Append("-f mpegts -muxdelay 0 -muxpreload 0 ")
                 .Append($"\"{outputUrl}\"")
                 .ToString();
@@ -30,6 +40,8 @@ namespace Project_Spacey.Programmer.Core.Playback
 
         private static string BuildFfmpegArgs_Transcode(string inputPath, string outputUrl, TimeSpan startOffset)
         {
+            // For live schedule alignment: if we're late, seek into the file so the visible content matches the timeline.
+            // -ss before -i = fast seek; good enough for MP4.
             var ss = startOffset <= TimeSpan.Zero
                 ? string.Empty
                 : $"-ss {startOffset.TotalSeconds:0.###} ";
@@ -58,6 +70,10 @@ namespace Project_Spacey.Programmer.Core.Playback
                 .ToString();
         }
 
+        /// <summary>
+        /// Transcode fallback. More CPU, but works for almost any input.
+        /// Designed to be stable (less stutter), still low-latency.
+        /// </summary>
         public static string BuildFfmpegArgs_Transcode(string inputPath, string outputUrl)
         {
             return new StringBuilder()
@@ -159,6 +175,9 @@ namespace Project_Spacey.Programmer.Core.Playback
             return process.ExitCode;
         }
 
+        /// <summary>
+        /// Streams one scheduled item. Tries remux first, then falls back to transcode if remux fails.
+        /// </summary>
         public async Task StartStreamingAsync(
     ScheduledItem item,
     MediaItem media,
@@ -169,7 +188,7 @@ namespace Project_Spacey.Programmer.Core.Playback
         {
             outputUrl ??= DefaultOutputUrl;
 
-            var now = DateTime.Now;
+            var now = DateTimeOffset.Now;
             var startOffset = now > item.StartTime ? (now - item.StartTime) : TimeSpan.Zero;
             var maxDuration = item.EndTime - now;
             if (maxDuration <= TimeSpan.Zero)
@@ -226,6 +245,7 @@ namespace Project_Spacey.Programmer.Core.Playback
                     await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                 }
 
+                // Stream item
                 await StartStreamingAsync(item, media, ffmpegPath, outputUrl, log, cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -247,6 +267,9 @@ namespace Project_Spacey.Programmer.Core.Playback
             return StartStreamingAsync(item, media, ffmpegPath, outputUrl, log, cancellationToken);
         }
 
+        /// <summary>
+        /// Launch ffplay for local debug viewing. Non-blocking, no redirects.
+        /// </summary>
         public void StartDebugPlayer(string ffplayPath, string streamUrl, Action<string>? log)
         {
             if (string.IsNullOrWhiteSpace(ffplayPath) || string.IsNullOrWhiteSpace(streamUrl))
@@ -255,6 +278,10 @@ namespace Project_Spacey.Programmer.Core.Playback
                 return;
             }
 
+            // IMPORTANT:
+            // - remove -an (you want audio)
+            // - quote the URL
+            // - add -sync ext to reduce clock weirdness with live streams
             var args = $"-fflags nobuffer -flags low_delay -framedrop -sync ext \"{streamUrl}\"";
 
             try

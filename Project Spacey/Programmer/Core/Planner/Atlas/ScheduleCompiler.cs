@@ -239,7 +239,8 @@ namespace Project_Spacey.Programmer.Core.Planner.Atlas
         private static (DateTime start, DateTime end) ComputeWindow(DateOnly day, TimeOnly start, TimeOnly end)
         {
             var s = day.ToDateTime(start);
-            var eDay = end < start ? day.AddDays(1) : day;
+            // Treat end == start as a 24h window (00:00 -> next day 00:00)
+            var eDay = end <= start ? day.AddDays(1) : day;
             var e = eDay.ToDateTime(end);
             return (s, e);
         }
