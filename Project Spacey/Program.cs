@@ -13,6 +13,9 @@ internal class Program
     {
         ConsoleUi.Section("Startup");
 
+        // Ensure no stale ffmpeg processes are running from previous sessions
+        PlaybackService.KillAllFfmpegProcesses(msg => ConsoleUi.Warn(msg));
+
         Database.Initialize();
         ConsoleUi.Success("Database initialized.");
 
@@ -121,22 +124,7 @@ internal class Program
         var compiler = new ScheduleCompiler();
         var day = DateOnly.FromDateTime(DateTime.Now);
 
-        // Prefer reusing an existing schedule file for the day
-        var schedulePath = ScheduleFileStore.GetDefaultPath(channelId, day);
-        ScheduleCompiler.Result result;
-
-        if (ScheduleFileStore.TryLoad(schedulePath, out var loaded))
-        {
-            ConsoleUi.Success($"Loaded schedule from file: {schedulePath}");
-            result = new ScheduleCompiler.Result(loaded.windowStart, loaded.windowEnd, loaded.items);
-        }
-        else
-        {
-            ConsoleUi.Info("No saved schedule found. Compiling a new schedule...");
-            result = compiler.Compile(day, plan, catalog, progress);
-            ScheduleFileStore.Save(schedulePath, result.WindowStart, result.WindowEnd, result.Items);
-            ConsoleUi.Success($"Saved schedule to file: {schedulePath}");
-        }
+        var result = compiler.Compile(day, plan, catalog, progress);
 
         await scheduleRepo.SaveDayAsync(conn, channelId, day, result.Items);
         await progressRepo.SaveAsync(conn, progress.Dump());

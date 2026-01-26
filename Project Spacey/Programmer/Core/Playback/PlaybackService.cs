@@ -12,6 +12,7 @@ namespace Project_Spacey.Programmer.Core.Playback
 {
     internal sealed class PlaybackService
     {
+        private Process? _currentFfmpeg;
         // Default if caller doesn't provide one
         public const string DefaultOutputUrl = "udp://127.0.0.1:1234?pkt_size=1316&overrun_nonfatal=1&fifo_size=5000000";
 
@@ -36,6 +37,55 @@ namespace Project_Spacey.Programmer.Core.Playback
                 .Append("-f mpegts -muxdelay 0 -muxpreload 0 ")
                 .Append($"\"{outputUrl}\"")
                 .ToString();
+        }
+
+        public void Stop(Action<string>? log = null)
+        {
+            var p = _currentFfmpeg;
+            if (p is null) return;
+
+            try
+            {
+                if (!p.HasExited)
+                {
+                    log?.Invoke("[stream] stopping ffmpeg (shutdown)");
+                    p.Kill(entireProcessTree: true);
+                }
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke("[stream] failed to stop ffmpeg: " + ex.Message);
+            }
+        }
+
+        public static void KillAllFfmpegProcesses(Action<string>? log = null)
+        {
+            try
+            {
+                var procs = Process.GetProcessesByName("ffmpeg");
+                if (procs.Length == 0)
+                {
+                    log?.Invoke("[startup] no ffmpeg processes found");
+                    return;
+                }
+
+                foreach (var p in procs)
+                {
+                    try
+                    {
+                        log?.Invoke($"[startup] killing ffmpeg pid={p.Id}");
+                        p.Kill(entireProcessTree: true);
+                    }
+                    catch (Exception ex)
+                    {
+                        log?.Invoke($"[startup] failed to kill ffmpeg pid={p.Id}: {ex.Message}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke("[startup] failed to enumerate ffmpeg processes: " + ex.Message);
+            }
         }
 
         private static string BuildFfmpegArgs_Transcode(string inputPath, string outputUrl, TimeSpan startOffset)
@@ -116,7 +166,7 @@ namespace Project_Spacey.Programmer.Core.Playback
             };
         }
 
-        private static async Task<int> RunFfmpegAsync(
+        private async Task<int> RunFfmpegAsync(
             string ffmpegPath,
             string args,
             TimeSpan maxDuration,
@@ -126,6 +176,8 @@ namespace Project_Spacey.Programmer.Core.Playback
             using var process = Process.Start(CreatePsi(ffmpegPath, args));
             if (process is null)
                 throw new InvalidOperationException("Failed to start ffmpeg process.");
+
+            _currentFfmpeg = process;
 
             var startedAt = DateTime.UtcNow;
 
@@ -168,11 +220,18 @@ namespace Project_Spacey.Programmer.Core.Playback
                 try { process.Kill(entireProcessTree: true); } catch { /* ignore */ }
             }
 
+            if (cancellationToken.IsCancellationRequested && !process.HasExited)
+            {
+                try { process.Kill(entireProcessTree: true); } catch { /* ignore */ }
+            }
+
             var ranFor = DateTime.UtcNow - startedAt;
             if (ranFor < TimeSpan.FromSeconds(1))
                 log?.Invoke($"[warn] ffmpeg ran very briefly ({ranFor:g}). Args might be invalid.");
 
-            return process.ExitCode;
+            var exitCode = process.ExitCode;
+            _currentFfmpeg = null;
+            return exitCode;
         }
 
         /// <summary>
@@ -188,7 +247,7 @@ namespace Project_Spacey.Programmer.Core.Playback
         {
             outputUrl ??= DefaultOutputUrl;
 
-            var now = DateTimeOffset.Now;
+            var now = DateTime.Now;
             var startOffset = now > item.StartTime ? (now - item.StartTime) : TimeSpan.Zero;
             var maxDuration = item.EndTime - now;
             if (maxDuration <= TimeSpan.Zero)
@@ -278,10 +337,7 @@ namespace Project_Spacey.Programmer.Core.Playback
                 return;
             }
 
-            // IMPORTANT:
-            // - remove -an (you want audio)
-            // - quote the URL
-            // - add -sync ext to reduce clock weirdness with live streams
+
             var args = $"-fflags nobuffer -flags low_delay -framedrop -sync ext \"{streamUrl}\"";
 
             try
